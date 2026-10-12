@@ -158,4 +158,23 @@ pub mod reserved {
     pub fn decompress_to_spl_preview(ctx: Context<DecompressToSplPreview>) -> Result<()> {
         decompress_to_spl_preview_handler(ctx)
     }
+
+    /// Phase 2A real egress: burn one existing ReservedShieldLeaf and release the full SPL amount.
+    pub fn unshield_zk<'info>(
+        ctx: Context<'_, '_, '_, 'info, UnshieldZk<'info>>,
+        amount: u64,
+        expected_policy_commitment: [u8; 32],
+        account_meta: light_sdk::instruction::account_meta::CompressedAccountMetaBurn,
+        current_note: ReservedShieldLeaf,
+        proof: light_sdk::instruction::ValidityProof,
+    ) -> Result<()> {
+        unshield_zk_handler(
+            ctx,
+            amount,
+            expected_policy_commitment,
+            account_meta,
+            current_note,
+            proof,
+        )
+    }
 }

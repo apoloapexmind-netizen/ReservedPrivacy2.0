@@ -834,6 +834,26 @@ export type ShieldZkTxPayload = {
   addressTree: TreeInfo;
   outputStateTree: TreeInfo;
   derivedAddressPk: PublicKey;
+  noteDraft: ShieldCompressedNoteDraft;
+};
+
+export type ShieldCompressedNoteDraft = {
+  spendAuthority: string;
+  owner: string;
+  vaultConfig: string;
+  mint: string;
+  amountRaw: string;
+  noteSequence: string;
+  addressSeedHex: string;
+  compressedAddressHex: string;
+  amountCommitmentHex: string;
+  ovkBindingHex: string | null;
+  blindingHex: string | null;
+  addressTree: string;
+  addressQueue: string;
+  addressTreeType: "AddressV1" | "AddressV2" | "Unknown";
+  outputStateTree: string;
+  outputStateQueue: string;
 };
 
 /**
@@ -842,9 +862,10 @@ export type ShieldZkTxPayload = {
 export async function sendShieldZkTx(
   params: ShieldZkParams,
   signSend: (tx: Transaction) => Promise<string>,
-): Promise<string> {
-  const { transaction } = await buildShieldZkTxPayload(params);
-  return signSend(transaction);
+): Promise<{ signature: string; noteDraft: ShieldCompressedNoteDraft }> {
+  const { transaction, noteDraft } = await buildShieldZkTxPayload(params);
+  const signature = await signSend(transaction);
+  return { signature, noteDraft };
 }
 
 /**
@@ -1307,7 +1328,37 @@ export async function buildShieldZkTxPayload(
 
   tx.add(shieldIx);
 
-  return { transaction: tx, addressTree, outputStateTree, derivedAddressPk };
+  return {
+    transaction: tx,
+    addressTree,
+    outputStateTree,
+    derivedAddressPk,
+    noteDraft: {
+      spendAuthority: canonicalSpendAuthority.toBase58(),
+      owner: canonicalSpendAuthority.toBase58(),
+      vaultConfig: vaultConfig.toBase58(),
+      mint: mint.toBase58(),
+      amountRaw: amountRaw.toString(),
+      noteSequence: noteSeq.toString(),
+      addressSeedHex: bytesToHex(addressSeed),
+      compressedAddressHex: bytesToHex(derivedAddressRaw32),
+      amountCommitmentHex: bytesToHex(amountCommitment),
+      ovkBindingHex: headAcc.ovkBinding
+        ? bytesToHex(new Uint8Array(Buffer.from(headAcc.ovkBinding as number[])))
+        : null,
+      blindingHex: null,
+      addressTree: addressTree.tree.toBase58(),
+      addressQueue: addressTree.queue.toBase58(),
+      addressTreeType:
+        addressTree.treeType === TreeType.AddressV1
+          ? "AddressV1"
+          : addressTree.treeType === TreeType.AddressV2
+            ? "AddressV2"
+            : "Unknown",
+      outputStateTree: outputStateTree.tree.toBase58(),
+      outputStateQueue: outputStateTree.queue.toBase58(),
+    },
+  };
 }
 
 export async function buildShieldZkTx(

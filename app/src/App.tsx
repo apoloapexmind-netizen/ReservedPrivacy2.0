@@ -39,6 +39,18 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 // IDL — copy kept in-repo so UI stays aligned with program/Anchor build (sync from `target/idl/reserved.json` after IDL changes).
 import idlRaw from "./idl/reserved.json";
 import { sendShieldZkTx, wipeZkShieldVolatile } from "./shieldCompressed";
+import {
+  createPendingCompressedNote,
+  exportCompressedNoteVoucher,
+  inferClusterFromEndpoint,
+  importCompressedNoteVoucher,
+  initNoteStore,
+  patchCompressedNote,
+  putCompressedNote,
+  type StoredCompressedNoteV1,
+} from "./noteStore";
+import { sendUnshieldZkTx } from "./unshieldCompressed";
+import { useCompressedBalance } from "./useCompressedBalance";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -65,6 +77,7 @@ const SEED_VAULT = Buffer.from("vault_cfg");
 const SEED_ESCROW = Buffer.from("pub_escrow");
 const SEED_NOTE = Buffer.from("note_head");
 const SEED_AUDIT = Buffer.from("audit_pol");
+const SEED_LIGHT_POOL_CUSTODY = Buffer.from("light_pool_custody");
 
 const DEVNET_RPC =
   import.meta.env.VITE_RPC_URL ?? "https://api.devnet.solana.com";
@@ -197,6 +210,13 @@ function deriveUserNoteHead(
 function deriveAuditorPolicy(programId: PublicKey, vaultConfig: PublicKey) {
   return PublicKey.findProgramAddressSync(
     [SEED_AUDIT, vaultConfig.toBuffer()],
+    programId,
+  );
+}
+
+function deriveLightPoolCustody(programId: PublicKey, mint: PublicKey) {
+  return PublicKey.findProgramAddressSync(
+    [SEED_LIGHT_POOL_CUSTODY, mint.toBuffer()],
     programId,
   );
 }
@@ -429,9 +449,22 @@ type VaultOverviewProps = {
   cofreShadowBusy: boolean;
   sbedSessionReady: boolean;
   vaultAuthorityPk: PublicKey | null;
+  compressedBalance: {
+    totalUi: string;
+    pendingUi: string;
+    activeNoteCount: number;
+    pendingNoteCount: number;
+    loading: boolean;
+    error: string | null;
+    lastSyncedAt: string | null;
+  };
+  activeCompressedNotes: StoredCompressedNoteV1[];
+  voucherStatus: string | null;
   onUnlockShadow: () => void;
   onLockShadow: () => void;
   onRefresh: () => void;
+  onRefreshCompressed: () => void;
+  onExportVoucher: (note: StoredCompressedNoteV1) => void;
 };
 
 function VaultOverviewCard({
@@ -443,9 +476,14 @@ function VaultOverviewCard({
   cofreShadowBusy,
   sbedSessionReady,
   vaultAuthorityPk,
+  compressedBalance,
+  activeCompressedNotes,
+  voucherStatus,
   onUnlockShadow,
   onLockShadow,
   onRefresh,
+  onRefreshCompressed,
+  onExportVoucher,
 }: VaultOverviewProps) {
   return (
     <section className="inst-card mb-10">
@@ -520,6 +558,78 @@ function VaultOverviewCard({
         )}
       </div>
 
+      <div className="inst-frost mt-6 p-6 shadow-inst">
+        <div className="text-xs font-medium uppercase tracking-wider text-inst-muted">
+          Compressed balance
+        </div>
+        {!cofreReady ? (
+          <div className="mt-6 text-sm text-inst-muted">
+            Connect your wallet to load locally persisted compressed notes.
+          </div>
+        ) : compressedBalance.loading ? (
+          <div className="mt-6 text-sm font-medium text-inst-accent">
+            Reconciling local notes with Light RPC…
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            <div className="font-mono text-4xl font-semibold text-inst-navy">
+              {compressedBalance.totalUi}
+            </div>
+            <p className="text-xs text-inst-muted">
+              Spendable compressed USDC reconstructed from your local note store.
+            </p>
+            {compressedBalance.pendingNoteCount > 0 ? (
+              <p className="text-xs text-inst-muted">
+                Pending indexation: {compressedBalance.pendingUi} across{" "}
+                {compressedBalance.pendingNoteCount} note
+                {compressedBalance.pendingNoteCount === 1 ? "" : "s"}.
+              </p>
+            ) : null}
+            <p className="text-xs text-inst-muted">
+              Active notes: {compressedBalance.activeNoteCount}
+              {compressedBalance.lastSyncedAt
+                ? ` · last sync ${new Date(compressedBalance.lastSyncedAt).toLocaleTimeString()}`
+                : ""}
+            </p>
+            {activeCompressedNotes.length > 0 ? (
+              <div className="space-y-2 pt-2">
+                {activeCompressedNotes.map((note) => (
+                  <div
+                    key={note.noteId}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-inst border border-inst-border bg-inst-bg/70 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-sm text-inst-navy">
+                        {rawUnitsToUiString(note.amountRaw, note.decimals)} USDC
+                      </p>
+                      <p className="truncate font-mono text-[11px] text-inst-muted">
+                        Note #{note.noteSequence} · {note.compressedAddressHex.slice(0, 12)}...
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onExportVoucher(note)}
+                      className="rounded-inst border border-inst-border bg-inst-surface px-3 py-2 text-xs font-medium text-inst-navy shadow-sm transition hover:border-inst-accent/40"
+                    >
+                      Exportar Voucher
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <p className="text-[11px] leading-relaxed text-amber-900">
+              El voucher funciona como una clave privada; quien lo posea puede reclamar los fondos.
+            </p>
+            {voucherStatus ? (
+              <p className="text-xs text-inst-accent">{voucherStatus}</p>
+            ) : null}
+            {compressedBalance.error ? (
+              <p className="text-xs text-amber-800">{compressedBalance.error}</p>
+            ) : null}
+          </div>
+        )}
+      </div>
+
       <div className="mt-6 flex flex-wrap gap-3">
         <button
           type="button"
@@ -528,6 +638,14 @@ function VaultOverviewCard({
           className="rounded-inst border border-inst-border bg-inst-surface px-5 py-2.5 text-sm font-medium text-inst-navy shadow-sm transition hover:border-inst-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
         >
           Refresh balance
+        </button>
+        <button
+          type="button"
+          disabled={!cofreReady}
+          onClick={onRefreshCompressed}
+          className="rounded-inst border border-inst-border bg-inst-surface px-5 py-2.5 text-sm font-medium text-inst-navy shadow-sm transition hover:border-inst-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Refresh compressed balance
         </button>
       </div>
     </section>
@@ -735,6 +853,23 @@ function usdcUiStringToRawUnits(ui: string, decimals: number): bigint {
   return v < 0n ? 0n : v;
 }
 
+function rawUnitsToUiString(raw: string | bigint, decimals: number): string {
+  const value = typeof raw === "bigint" ? raw : BigInt(raw);
+  const negative = value < 0n;
+  const abs = negative ? -value : value;
+  const base = 10n ** BigInt(decimals);
+  const whole = abs / base;
+  const fraction = abs % base;
+  if (fraction === 0n) {
+    return `${negative ? "-" : ""}${whole.toString()}`;
+  }
+  const padded = fraction
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
+  return `${negative ? "-" : ""}${whole.toString()}.${padded}`;
+}
+
 function resolveDepositAmountRaw(
   mode: "shield-ui-usdc" | "raw-field",
   mint: PublicKey,
@@ -767,10 +902,12 @@ function InnerConsole() {
   const [complianceOpen, setComplianceOpen] = useState(false);
   const [cofreAmount, setCofreAmount] = useState("1000000");
   const [auditorPkStr, setAuditorPkStr] = useState("");
-  const [requireAttestor, setRequireAttestor] = useState(true);
+  const [requireAttestor, setRequireAttestor] = useState(false);
   const [policyHex, setPolicyHex] = useState("");
   const [lightPoolAtaStr, setLightPoolAtaStr] = useState("");
   const [recipientAtaStr, setRecipientAtaStr] = useState("");
+  const [voucherImportCode, setVoucherImportCode] = useState("");
+  const [voucherStatus, setVoucherStatus] = useState<string | null>(null);
 
   const [txLog, setTxLog] = useState<
     { label: string; sig: string; kind: "chain" | "audit" }[]
@@ -799,6 +936,12 @@ function InnerConsole() {
     signature: Uint8Array;
   } | null>(null);
   const mockPoolRef = useRef(Keypair.generate());
+
+  useEffect(() => {
+    void initNoteStore().catch((error) => {
+      console.error("[notes] failed to initialize IndexedDB", error);
+    });
+  }, []);
 
   useEffect(() => {
     try {
@@ -912,6 +1055,70 @@ function InnerConsole() {
       return null;
     }
   }, [mintStr]);
+
+  const compressedBalance = useCompressedBalance({
+    connection,
+    spendAuthority: w.publicKey,
+    mint,
+    programId: PROGRAM_ID,
+    enabled: Boolean(w.connected && mint),
+  });
+
+  const onExportVoucher = useCallback(
+    async (note: StoredCompressedNoteV1) => {
+      try {
+        const voucher = exportCompressedNoteVoucher(note);
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(voucher);
+          setVoucherStatus(
+            `Voucher copied for note #${note.noteSequence}. Keep it private; anyone who imports it can redeem the funds.`,
+          );
+        } else {
+          setVoucherImportCode(voucher);
+          setVoucherStatus(
+            `Voucher generated for note #${note.noteSequence}. Clipboard is unavailable, so the code was placed in the import field below.`,
+          );
+        }
+      } catch (e) {
+        setVoucherStatus(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [],
+  );
+
+  const onImportVoucher = useCallback(async () => {
+    if (!w.publicKey) {
+      setFatalModal("Connect Wallet B before importing an external voucher.");
+      return;
+    }
+    try {
+      await initNoteStore();
+      const imported = importCompressedNoteVoucher(
+        voucherImportCode,
+        w.publicKey.toBase58(),
+      );
+      if (imported.programId !== PROGRAM_ID.toBase58()) {
+        throw new Error(
+          `Voucher targets program ${imported.programId}, but this UI is connected to ${PROGRAM_ID.toBase58()}.`,
+        );
+      }
+      if (mint && imported.mint !== mint.toBase58()) {
+        throw new Error(
+          `Voucher mint ${imported.mint} does not match the current treasury mint ${mint.toBase58()}.`,
+        );
+      }
+      await putCompressedNote(imported);
+      setVoucherStatus(
+        `Voucher imported into wallet ${w.publicKey.toBase58().slice(0, 8)}… The note is now available locally for unshield.`,
+      );
+      await compressedBalance.refresh();
+      setVoucherImportCode("");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setVoucherStatus(message);
+      setFatalModal(message);
+    }
+  }, [compressedBalance, mint, voucherImportCode, w.publicKey]);
 
   const assertVaultProvisionedForMint = useCallback(
     async (m: PublicKey, flowLabel: string) => {
@@ -1407,7 +1614,7 @@ function InnerConsole() {
         return;
       }
       try {
-        await sendShieldZkTx(
+        const { signature, noteDraft } = await sendShieldZkTx(
           {
             connection,
             program,
@@ -1426,6 +1633,37 @@ function InnerConsole() {
           },
           (tx) => sendPreparedTransaction("shield_into_compressed", tx),
         );
+        try {
+          await putCompressedNote(
+            createPendingCompressedNote({
+              cluster: inferClusterFromEndpoint(connection.rpcEndpoint),
+              programId: PROGRAM_ID.toBase58(),
+              spendAuthority: noteDraft.spendAuthority,
+              owner: noteDraft.owner,
+              vaultConfig: noteDraft.vaultConfig,
+              mint: noteDraft.mint,
+              decimals: USDC_DECIMALS,
+              amountRaw: noteDraft.amountRaw,
+              noteSequence: noteDraft.noteSequence,
+              addressSeedHex: noteDraft.addressSeedHex,
+              compressedAddressHex: noteDraft.compressedAddressHex,
+              amountCommitmentHex: noteDraft.amountCommitmentHex,
+              blindingHex: noteDraft.blindingHex,
+              ovkBindingHex: noteDraft.ovkBindingHex,
+              addressTree: noteDraft.addressTree,
+              addressQueue: noteDraft.addressQueue,
+              addressTreeType: noteDraft.addressTreeType,
+              outputStateTree: noteDraft.outputStateTree,
+              outputStateQueue: noteDraft.outputStateQueue,
+              shieldTxSig: signature,
+            }),
+          );
+        } catch (persistError) {
+          console.error("[notes] failed to persist compressed note", persistError);
+          setFatalModal(
+            "Shield succeeded on-chain, but local note persistence failed. The compressed balance UI may not be able to recover this note automatically on this browser profile.",
+          );
+        }
       } catch (e: unknown) {
         logErr(e);
         return;
@@ -1605,10 +1843,11 @@ function InnerConsole() {
       return;
     }
     const [vaultConfig] = deriveVaultConfig(PROGRAM_ID, mint);
-    const [vaultAuthority] = deriveVaultAuthority(PROGRAM_ID, mint);
-    const vaultTokenAccount = getAssociatedTokenAddressSync(
+    const [auditorPolicy] = deriveAuditorPolicy(PROGRAM_ID, vaultConfig);
+    const [lightPoolCustody] = deriveLightPoolCustody(PROGRAM_ID, mint);
+    const lightPoolTokenAccount = getAssociatedTokenAddressSync(
       mint,
-      vaultAuthority,
+      lightPoolCustody,
       true,
       TOKEN_PROGRAM_ID,
     );
@@ -1622,33 +1861,85 @@ function InnerConsole() {
     const recInfo = await connection.getAccountInfo(recipientAta);
     if (!recInfo) tx.add(ensureAtaIx(w.publicKey, mint).ix);
     const amountRaw = usdcUiStringToRawUnits(withdrawUsdc, USDC_DECIMALS);
-    const cfg = await (program.account as any).vaultConfig.fetch(vaultConfig);
-    const chainIdHash = new Uint8Array(Buffer.from(cfg.chainIdHash as number[]));
-    const { opening, blinding } = buildBunkerOpening(amountRaw);
-    const commitment = await bunkerWithdrawCommitmentBytes(
-      amountRaw,
-      blinding,
-      w.publicKey,
-      vaultConfig,
-      mint,
-      chainIdHash,
-      PROGRAM_ID,
+    if (amountRaw <= 0n) {
+      setFatalModal("Withdrawal amount must be greater than zero.");
+      return;
+    }
+
+    const selectedNote = compressedBalance.spendableNotes.find(
+      (note) => BigInt(note.amountRaw) === amountRaw,
     );
-    const ix = await program.methods
-      .withdrawPublic([...commitment], opening)
-      .accounts({
-        vaultConfig,
-        authority: w.publicKey,
-        recipientTokenAccount: recipientAta,
-        vaultTokenAccount,
-        vaultAuthority,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .instruction();
-    tx.add(ix);
-    await sendPreparedTransaction("withdraw_public", tx);
-    await refreshWalletBunkerBalance();
-    enforceForensicSilence({ clearShieldAmount: true });
+    if (!selectedNote) {
+      setFatalModal(
+        `Phase 2A only supports withdrawing one full note. No active compressed note matches ${amountRaw.toString()} raw (${withdrawUsdc} USDC).`,
+      );
+      return;
+    }
+
+    let policy: { auditorPubkey: PublicKey; policyCommitment: number[] };
+    try {
+      policy = await (program.account as any).auditorPolicy.fetch(auditorPolicy);
+    } catch {
+      setFatalModal(
+        "Auditor policy is missing on-chain. Upsert the auditor policy before unshielding.",
+      );
+      return;
+    }
+    const auditorPk = policy.auditorPubkey as PublicKey;
+    if (!auditorPk.equals(PublicKey.default) && !auditorPk.equals(w.publicKey)) {
+      setFatalModal(
+        `This vault policy names auditor ${auditorPk.toBase58()}. Connect that wallet so it can co-sign unshield_zk, or reset policy to SystemProgram default and upsert again.`,
+      );
+      return;
+    }
+    const expectedCommitment = new Uint8Array(
+      Buffer.from(policy.policyCommitment as number[]),
+    );
+
+    const originalStatus = selectedNote.status;
+    try {
+      await patchCompressedNote(selectedNote.noteId, {
+        status: "spending",
+        recipientTokenAccount: recipientAta.toBase58(),
+      });
+      const sig = await sendUnshieldZkTx(
+        {
+          connection,
+          program,
+          programId: PROGRAM_ID,
+          feePayer: w.publicKey,
+          spendAuthority: w.publicKey,
+          vaultConfig,
+          auditorPolicy,
+          expectedPolicyCommitment: expectedCommitment,
+          auditorAttestor: w.publicKey,
+          mint,
+          lightPoolTokenAccount,
+          lightPoolCustody,
+          recipientTokenAccount: recipientAta,
+          note: selectedNote,
+        },
+        async (withdrawTx) => {
+          tx.add(...withdrawTx.instructions);
+          return sendPreparedTransaction("unshield_zk", tx);
+        },
+      );
+      await patchCompressedNote(selectedNote.noteId, {
+        status: "spent",
+        spendTxSig: sig,
+        spentAt: new Date().toISOString(),
+        recipientTokenAccount: recipientAta.toBase58(),
+      });
+      await refreshWalletBunkerBalance();
+      await compressedBalance.refresh();
+      enforceForensicSilence({ clearShieldAmount: true });
+    } catch (e) {
+      await patchCompressedNote(selectedNote.noteId, {
+        status: originalStatus,
+        recipientTokenAccount: null,
+      }).catch(() => undefined);
+      throw e;
+    }
   };
 
   const onCreateBa5qMockMint = async () => {
@@ -1941,9 +2232,14 @@ function InnerConsole() {
             cofreShadowBusy={cofreShadowBusy}
             sbedSessionReady={Boolean(cofreSessionNonceHex && w.connected)}
             vaultAuthorityPk={vaultAuthorityCofre}
+            compressedBalance={compressedBalance}
+            activeCompressedNotes={compressedBalance.spendableNotes}
+            voucherStatus={voucherStatus}
             onUnlockShadow={() => onUnlockCofreShadow().catch(logErr)}
             onLockShadow={onLockCofreShadow}
             onRefresh={() => refreshCofreBalance().catch(logErr)}
+            onRefreshCompressed={() => compressedBalance.refresh().catch(logErr)}
+            onExportVoucher={(note) => onExportVoucher(note).catch(logErr)}
           />
         ) : null}
 
@@ -2000,8 +2296,9 @@ function InnerConsole() {
               </p>
               <h2 className="mt-2 text-xl font-semibold text-inst-navy">Withdrawal</h2>
               <p className="mt-3 text-sm leading-relaxed text-inst-muted">
-                Withdraw from the same treasury vault to your wallet. Requires vault authority
-                signature. Amounts are entered in USDC; conversion is handled automatically.
+                Burn one active compressed note and release the full amount back to your wallet ATA.
+                Phase 2A only supports full-note withdrawals, so the entered amount must match one
+                active note exactly.
               </p>
               <label className="mt-6 block text-sm font-medium text-inst-navy">
                 Amount (USDC)
@@ -2013,6 +2310,27 @@ function InnerConsole() {
                   disabled={!mint || !isUsdcDevnetMint(mint)}
                 />
               </label>
+              <label className="mt-6 block text-sm font-medium text-inst-navy">
+                Importar Voucher Externo
+                <textarea
+                  className="inst-input min-h-[7rem] max-w-2xl font-mono text-xs"
+                  value={voucherImportCode}
+                  onChange={(e) => setVoucherImportCode(e.target.value)}
+                  placeholder="Pega aquí el voucher Base58 exportado desde otra wallet."
+                  disabled={!ready}
+                />
+              </label>
+              <p className="mt-3 max-w-2xl text-xs leading-relaxed text-amber-900">
+                El voucher funciona como una clave privada; quien lo posea puede reclamar los fondos.
+              </p>
+              <button
+                type="button"
+                disabled={!ready || !voucherImportCode.trim()}
+                onClick={() => onImportVoucher().catch(logErr)}
+                className="mt-4 rounded-inst border border-inst-border bg-inst-surface px-6 py-3 text-sm font-semibold text-inst-navy shadow-sm transition hover:border-inst-accent/40 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Importar Voucher Externo
+              </button>
               <button
                 type="button"
                 disabled={!ready || !mint || !isUsdcDevnetMint(mint) || !treasuryVaultReady}
