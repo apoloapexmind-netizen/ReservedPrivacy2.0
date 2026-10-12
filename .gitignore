@@ -1,0 +1,45 @@
+/target/
+**/*.rs.bk
+.anchor/
+test-ledger/
+.DS_Store
+.env
+.env.*
+!.env.example
+scripts/colosseum_intel/env.secret
+node_modules/
+
+# ========================
+# ARCHIVOS DE ENTORNO
+# ========================
+.env
+.env.local
+.env.*
+!.env.example
+
+# ========================
+# LLAVES PRIVADAS SOLANA/ANCHOR (¡CRÍTICO!)
+# ========================
+# Ignorar todos los JSON por defecto para evitar fugas
+*.json
+# Excepciones necesarias para que el proyecto compile:
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.node.json
+!anchor.json
+!target/idl/*.json
+# Forzar ignorar cualquier keypair
+**/*-keypair.json
+id.json
+*.pem
+
+# ========================
+# CARPETAS DE COMPILACIÓN
+# ========================
+node_modules/
+target/
+.anchor/
+.vite/
+dist/
+build/

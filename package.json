@@ -1,0 +1,23 @@
+{
+  "name": "reserved-protocol",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "init:pool": "npx tsx app/scripts/init-pool.ts",
+    "test": "ts-mocha -p ./tsconfig.json -t 1000000 'tests/**/*.ts'"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.31.1",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.95.8"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.11",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.30",
+    "chai": "^4.5.0",
+    "mocha": "^10.8.2",
+    "ts-mocha": "^10.0.0",
+    "typescript": "~5.4.5"
+  }
+}

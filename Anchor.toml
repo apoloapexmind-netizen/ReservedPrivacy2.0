@@ -1,0 +1,22 @@
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+reserved = "BA5QxMGYW132ELKZ58jJ7hDjKNHSPB52hfmuwiYGDNYR"
+
+[programs.devnet]
+reserved = "BA5QxMGYW132ELKZ58jJ7hDjKNHSPB52hfmuwiYGDNYR"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[toolchain]
+anchor_version = "0.31.1"
+
+[workspace]
+members = ["src/programs/reserved"]

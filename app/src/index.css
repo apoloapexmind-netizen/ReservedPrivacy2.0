@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply min-h-screen bg-inst-bg font-sans text-inst-navy antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer components {
+  .inst-input {
+    @apply mt-2 w-full rounded-xl border border-inst-border bg-inst-bg px-4 py-3 text-sm text-inst-navy shadow-sm outline-none transition placeholder:text-inst-muted/70 focus:border-inst-accent focus:ring-2 focus:ring-inst-accent/20;
+  }
+
+  .inst-card {
+    @apply rounded-inst border border-inst-border bg-inst-bg p-8 shadow-inst;
+  }
+
+  .inst-toast {
+    animation: inst-toast-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes inst-toast-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 12px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+
+  .inst-frost {
+    @apply relative overflow-hidden rounded-2xl border border-inst-border bg-inst-surface/80 backdrop-blur-md;
+  }
+
+  .inst-wallet-adapter .wallet-adapter-button {
+    @apply rounded-xl border border-inst-border bg-inst-bg font-sans text-sm font-medium text-inst-navy shadow-sm !important;
+  }
+
+  .inst-btn {
+    @apply rounded-inst border border-inst-border bg-inst-bg px-4 py-2.5 text-sm font-medium text-inst-navy shadow-sm transition hover:border-inst-accent/30 hover:bg-inst-surface disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .inst-btn-primary {
+    @apply rounded-inst border border-inst-navy bg-inst-navy px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-inst-navy/90 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .inst-btn-ghost {
+    @apply rounded-inst border border-transparent bg-transparent px-4 py-2.5 text-sm font-medium text-inst-navy transition hover:bg-inst-surface disabled:opacity-40;
+  }
+
+  .inst-btn-destructive {
+    @apply rounded-inst border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-800 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+}

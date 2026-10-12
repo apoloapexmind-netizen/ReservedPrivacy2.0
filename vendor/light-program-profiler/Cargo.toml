@@ -1,0 +1,21 @@
+[package]
+name = "light-program-profiler"
+version = "0.1.0"
+edition = "2021"
+description = "Profiler macros with custom profiler syscalls for Solana programs (patched for rustc < 1.82)"
+license = "Apache-2.0"
+
+[features]
+profile-program = ["light-profiler-macro/profile-program"]
+profile-heap = ["light-profiler-macro/profile-heap"]
+inline = ["light-profiler-macro/inline"]
+
+[dependencies]
+light-profiler-macro = "0.1.0"
+
+[lints.rust.unexpected_cfgs]
+level = "allow"
+check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("frozen-abi", "no-entrypoint"))',
+]

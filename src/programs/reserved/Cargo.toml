@@ -1,0 +1,33 @@
+[package]
+name = "reserved"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+anchor-debug = []
+idl-build = [
+    "anchor-lang/idl-build",
+    "anchor-spl/idl-build",
+    "light-sdk/idl-build",
+]
+
+[dependencies]
+blake3 = { workspace = true }
+indexmap = { workspace = true }
+proc-macro-crate = { workspace = true }
+unicode-segmentation = { workspace = true }
+borsh = { workspace = true }
+pinocchio = { workspace = true }
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+anchor-spl = "0.31.1"
+light-compressed-account = { version = "0.11.0", default-features = false, features = ["anchor", "keccak"] }
+light-sdk = { version = "0.23.0", default-features = false, features = ["anchor", "v2"] }
+# NOTE: crates.io light-utils 1.1.0 pins solana-program 1.18.x; incompatible with light-sdk 0.23 (Solana 2.x).
